@@ -1,13 +1,13 @@
-# Northstar Workbench
+# OSINT Observatory
 
-[![CI](https://github.com/pouriamrt/northstar-workbench/actions/workflows/ci.yml/badge.svg)](https://github.com/pouriamrt/northstar-workbench/actions/workflows/ci.yml)
+[![CI](https://github.com/pouriamrt/osint-observatory/actions/workflows/ci.yml/badge.svg)](https://github.com/pouriamrt/osint-observatory/actions/workflows/ci.yml)
 ![Node.js](https://img.shields.io/badge/Node.js-24%2B-43853d)
 ![React](https://img.shields.io/badge/React-19-61dafb)
 ![TypeScript](https://img.shields.io/badge/TypeScript-5.9-3178c6)
 
 A local research workspace for public cameras, geospatial events, public-source lookups, and evidence notes. Explore a map, inspect a source, and keep your findings together on your own machine.
 
-![Northstar Workbench showing an Ottawa street map and traffic camera](docs/images/camera-workbench.png)
+![OSINT Observatory showing an Ottawa street map and traffic camera](docs/images/camera-workbench.png)
 
 *Ottawa camera browsing. Map data © OpenStreetMap contributors; camera imagery from City of Ottawa, Traffic Services.*
 
@@ -25,8 +25,8 @@ A local research workspace for public cameras, geospatial events, public-source 
 Requires **Node.js 24 or newer** and npm.
 
 ```sh
-git clone https://github.com/pouriamrt/northstar-workbench.git
-cd northstar-workbench
+git clone https://github.com/pouriamrt/osint-observatory.git
+cd osint-observatory
 npm ci
 npm run dev
 ```
