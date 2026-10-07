@@ -1,0 +1,2 @@
+export const cameraColors: Record<string, string> = { EarthCam: '#8de4c2', SkylineWebcams: '#88b9f0', DriveBC: '#e8b878', 'Québec 511': '#c3a8ec', 'Toronto Traffic Cameras': '#78d3dd', 'Calgary Traffic Cameras': '#f0a59c', 'Ottawa Traffic Cameras': '#b7d68c', 'My cameras': '#c5d0d8' };
+export const cameraColor = (name: string) => cameraColors[name] || '#8de4c2';

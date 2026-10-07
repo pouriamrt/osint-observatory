@@ -1,0 +1,51 @@
+import assert from 'node:assert/strict';
+import { mkdirSync, writeFileSync } from 'node:fs';
+import { chromium } from '@playwright/test';
+import { mockStreetTiles } from './map-test-fixtures.mjs';
+import { createApp } from '../server/index.mjs';
+import { openStore } from '../server/core.mjs';
+
+const store = openStore(':memory:'), { app } = createApp({ store });
+const pixel = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg==', 'base64');
+// Static fixture route added before the app's 404 handler through a dedicated upstream wrapper.
+const express = (await import('express')).default; const wrapper = express();
+wrapper.get('/fixture.png', (req, res) => res.type('png').send(pixel)); wrapper.use(app);
+const server = wrapper.listen(0, '127.0.0.1'); await new Promise(resolve => server.once('listening', resolve));
+const base = `http://127.0.0.1:${server.address().port}`;
+store.importRows('camera', [{ name: 'Synthetic detection fixture', lat: 0, lon: 0, url: `${base}/fixture.png`, source: 'Synthetic browser-test fixture', kind: 'image' }]);
+const browser = await chromium.launch({ headless: true }), page = await browser.newPage({ viewport: { width: 390, height: 844 } });
+await mockStreetTiles(page);
+const errors = []; page.on('pageerror', e => errors.push(e.message));
+const report = { checks: [], errors };
+try {
+  await page.goto('http://127.0.0.1:5173');
+  await page.getByText(/Latest planetary K index: \d/).waitFor({ timeout: 25000 }); report.checks.push('NOAA object payload displays numeric K index');
+  await page.getByRole('button', { name: 'Open navigation', exact: true }).click();
+  await page.getByRole('navigation', { name: 'Research modules' }).getByRole('button', { name: 'Camera Globe', exact: true }).click();
+  await page.getByLabel('Camera source', { exact: true }).selectOption('SkylineWebcams');
+  await page.locator('.camera-list-select').first().waitFor(); await page.locator('.camera-list-select').first().click();
+  await page.waitForFunction(() => { const img = document.querySelector('.camera-preview-image img'); return img && img.complete && img.naturalWidth > 0; });
+  await page.screenshot({ path: 'artifacts/camera-mobile.png', fullPage: true, animations: 'disabled' });
+  await page.setViewportSize({ width: 1440, height: 1000 }); await page.screenshot({ path: 'artifacts/camera-desktop.png', fullPage: true, animations: 'disabled' });
+  await page.getByRole('button', { name: 'Close camera details', exact: true }).click();
+  await page.getByLabel('Camera source', { exact: true }).selectOption('EarthCam'); await page.getByLabel('Search cameras').fill('Times Square');
+  await page.locator('.camera-list-select').first().waitFor(); await page.locator('.camera-list-select').first().click();
+  await page.waitForFunction(() => { const img = document.querySelector('.camera-preview-image img'); return img && img.complete && img.naturalWidth > 0; });
+  await page.getByRole('button', { name: 'World map', exact: true }).click(); await page.getByRole('img', { name: 'World map with research locations' }).waitFor();
+  await page.screenshot({ path: 'artifacts/camera-earthcam-map.png', fullPage: true, animations: 'disabled' });
+  report.checks.push('Actual EarthCam and Skyline preview images load and provider markers render in both map modes');
+  await page.getByRole('button', { name: 'Close camera details', exact: true }).click(); await page.getByRole('button', { name: 'Clear filters', exact: true }).click();
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.getByRole('button', { name: 'Import cameras', exact: true }).click();
+  const panel = await page.locator('.import-panel').boundingBox(); assert(panel.x >= 0 && panel.x + panel.width <= 391); report.checks.push('Mobile import panel remains inside viewport');
+  await page.getByRole('button', { name: 'Close import', exact: true }).click();
+  await page.goto('http://127.0.0.1:5173/#watchtower'); await page.waitForFunction(() => !document.querySelector('.inspector .busy'));
+  await page.screenshot({ path: 'artifacts/watchtower-mobile.png', fullPage: true, animations: 'disabled' });
+  await page.setViewportSize({ width: 1440, height: 1000 }); await page.screenshot({ path: 'artifacts/watchtower-desktop.png', fullPage: true, animations: 'disabled' });
+  await page.goto(`${base}/#camera`); await page.getByLabel('Search cameras').fill('Synthetic detection fixture'); await page.locator('.camera-list-select').filter({ hasText: 'Synthetic detection fixture' }).click();
+  await page.getByRole('button', { name: 'Detect objects', exact: true }).click();
+  const result = page.getByText('No objects detected above 55% confidence.', { exact: true });
+  await result.waitFor({ timeout: 60000 }); report.checks.push('COCO-SSD model loads and runs local image inference');
+  assert.deepEqual(errors, []);
+  writeFileSync('artifacts/confirmation-report.json', JSON.stringify(report, null, 2)); console.log(JSON.stringify(report));
+} finally { await browser.close(); await new Promise(resolve => server.close(resolve)); store.db.close(); }

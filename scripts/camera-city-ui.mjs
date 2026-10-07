@@ -1,0 +1,57 @@
+import assert from 'node:assert/strict';
+import { mkdirSync } from 'node:fs';
+import { chromium } from '@playwright/test';
+import { mockStreetTiles } from './map-test-fixtures.mjs';
+
+// Exercise the same running app and the camera shown in the user's screenshot.
+const base = process.env.CAMERA_APP_URL || 'http://127.0.0.1:5173';
+const browser = await chromium.launch({ headless: true }), page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+await mockStreetTiles(page);
+mkdirSync('artifacts', { recursive: true });
+try {
+  await page.goto(`${base}/#camera?country=Canada&place=Ottawa`);
+  await page.getByLabel('Select camera', { exact: true }).selectOption('ottawa:309');
+  await page.getByRole('button', { name: '3D globe', exact: true }).click();
+  for (let step = 0; step < 16; step++) await page.getByLabel('Zoom in', { exact: true }).click();
+  assert.equal(await page.locator('.flat-map').count(), 1, 'Continued globe zoom reaches a city map instead of stopping at one dot');
+  assert(Number((await page.locator('.flat-map').getAttribute('viewBox')).split(' ')[2]) < .02, 'Street-scale zoom is available');
+  await page.locator('.flat-map').hover();
+  const beforeWheel = await page.evaluate(() => ({ scroll: scrollY, width: Number(document.querySelector('.flat-map').getAttribute('viewBox').split(' ')[2]) }));
+  await page.mouse.wheel(0, -200);
+  await page.waitForFunction(width => Number(document.querySelector('.flat-map').getAttribute('viewBox').split(' ')[2]) < width, beforeWheel.width);
+  assert.equal(await page.evaluate(() => scrollY), beforeWheel.scroll, 'Map wheel zoom does not scroll the page');
+  await page.getByRole('button', { name: 'Close camera details', exact: true }).click();
+  await page.getByLabel('Search cameras', { exact: true }).fill('Ottawa');
+  await page.getByRole('button', { name: 'World map', exact: true }).click();
+  const groups = page.getByRole('button', { name: /^Zoom to \d+ locations$/ });
+  assert(await groups.count() > 0); await groups.first().dispatchEvent('click');
+  await page.getByRole('dialog', { name: 'Cameras at this location', exact: true }).waitFor();
+  assert(await page.locator('.map-camera-choice').count() > 1, 'Crowded pins show named choices inside the map');
+  const choice = page.locator('.map-camera-choice').first(), name = await choice.getAttribute('data-camera-name');
+  await choice.click(); await page.getByRole('heading', { name, exact: true }).waitFor();
+  await page.getByRole('button', { name: 'Close nearby cameras', exact: true }).click();
+  await page.getByRole('button', { name: 'Show all matching cameras', exact: true }).click();
+  await page.getByLabel('Select camera', { exact: true }).selectOption('ottawa:309');
+  await page.getByText('Ottawa reports no live feed for this camera.', { exact: false }).waitFor();
+  assert.equal(await page.locator('.preview-credit').count(), 0, 'An outage card is not credited as a live snapshot');
+  await page.getByRole('button', { name: 'Try a nearby camera', exact: true }).click();
+  await page.waitForFunction(() => document.querySelector('#camera-selection')?.value !== 'ottawa:309');
+  await page.getByLabel('Select camera', { exact: true }).selectOption('ottawa:50');
+  await page.waitForFunction(() => document.querySelector('.snapshot-status')?.textContent.includes('Image fetched at'));
+  await page.getByRole('button', { name: 'Pause updates', exact: true }).click();
+  const lastFrame = await page.locator('.camera-preview-image img').getAttribute('data-source-url');
+  await page.route('**/api/cameras/ottawa-snapshot?id=16&*', route => route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ cameraStatus: 'offline' }) }));
+  await page.getByRole('button', { name: 'Refresh snapshot', exact: true }).click();
+  await page.getByText('Showing the last available frame.', { exact: false }).waitFor();
+  assert.equal(await page.locator('.camera-preview-image img').getAttribute('data-source-url'), lastFrame);
+  await page.unroute('**/api/cameras/ottawa-snapshot?id=16&*');
+  await page.getByRole('button', { name: 'Retry snapshot', exact: true }).click();
+  await page.waitForFunction(() => document.querySelector('.snapshot-status')?.textContent.includes('Image fetched at'));
+  assert.notEqual(await page.locator('.camera-preview-image img').getAttribute('data-source-url'), lastFrame);
+  await page.evaluate(() => { document.activeElement?.blur(); scrollTo(0, 0); });
+  await page.screenshot({ path: 'artifacts/camera-city-desktop.png', fullPage: true });
+  await page.setViewportSize({ width: 390, height: 844 });
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1), false);
+  await page.screenshot({ path: 'artifacts/camera-city-mobile.png', fullPage: true });
+  console.log('PASS: globe-to-city zoom, named map choices, explicit provider outage, nearby retry, real Bank & Hunt Club image, desktop/mobile');
+} finally { await browser.close(); }

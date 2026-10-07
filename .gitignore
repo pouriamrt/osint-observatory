@@ -1,0 +1,47 @@
+# Dependencies and generated build/test output
+node_modules/
+dist/
+artifacts/
+coverage/
+playwright-report/
+test-results/
+.vite/
+.cache/
+.codegraph/
+*.tsbuildinfo
+
+# Local workspace data, environment settings, and credentials
+/data/
+.env
+.env.*
+!.env.example
+*.sqlite*
+*.db
+*.db-shm
+*.db-wal
+*.pem
+*.key
+*.p12
+*.pfx
+*.log
+
+# Local planning documents (keep them on disk)
+/DESIGN.md
+/design.md
+/PRODUCT.md
+/product.md
+
+# Editor, operating system, and temporary files
+.vscode/
+.idea/
+.vs/
+.history/
+.DS_Store
+Thumbs.db
+Desktop.ini
+/tmp/
+/temp/
+*.tmp
+*.bak
+*.swp
+*.swo

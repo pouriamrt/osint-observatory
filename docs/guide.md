@@ -1,0 +1,84 @@
+# User and developer guide
+
+## Modules
+
+| Module | Working capability | Coverage boundary |
+| --- | --- | --- |
+| Camera Globe | 3,103 mapped public views including 2,708 Canadian entries, native map previews, favorites, search/nearby/area filters, camera imports, image/video/HLS playback, local COCO-SSD | 319 EarthCam positions, 81 approximate Skyline depicted-place positions, and 2,703 Canadian public-road camera entries in the bundled snapshots. Live provider playback opens at source. CORS permissions are needed for media analysis. Detection downloads its model on first use. |
+| Username OSINT | GitHub, GitLab, Hacker News public APIs; platform review links; optional HIBP audit | Handle matches do not establish common ownership. Breaches require your HIBP key and account authorization. No leaked passwords or breach dumps. |
+| Crypto Tracing | Bitcoin public API; wallet graph expansion; latest native EVM transaction page with Blockscout PRO; time filtering; transfer imports | 24 named chains are listed, not 24 guaranteed live feeds. Blockscout support varies. Additional chains work through imports. No automatic cross-chain bridge attribution, token/internal-transfer coverage, owner labels, or complete-history claim. |
+| NetScan | DNS resolution, crt.sh subdomain leads, TCP checks, TLS certificate observations, small CIDR ranges, validated Tor v3 connections through SOCKS | Active scope is enforced by SCAN_ALLOWLIST; at most 32 ports and 16 addresses per range. No exploitation or vulnerability scanner. Ports do not prove service identity; timeouts are unknown. |
+| Hawk | Local EXIF/GPS inspection, SHA-256, least-squares intersection of landmark compass bearings, residual checks | EXIF is editable. No visual geolocation model or authenticity proof. Geometry uses a local-plane approximation within 50 km and below 85° latitude; independent bearings are required. |
+| Skywave | Calibrated spectrum CSV/JSON, sample filtering, spectrum plot, time waterfall, receiver-directory links | No RF hardware feed, inferred transmitter identity, demodulation, or propagation model. dBm values must come from a calibrated instrument. |
+| Fisherman | Expiring consent links; optional browser geolocation with accuracy; visit records and export | Visits are saved only after explicit consent. Loopback-only links cannot be shared remotely. No covert telemetry, deceptive download flow, or IP-derived location. |
+| Catalogue | Live GLEIF LEI entity search, 27 curated registry sources, imported records and sources, jurisdiction/category filters | Other registries require manual review. No 100-registry automatic coverage claim. Names are not merged; source plus strong record identifier is preserved. |
+| Watchtower | Live USGS earthquakes, NASA EONET natural hazards, NOAA planetary K index, five-minute event refresh, geo-event imports | Aviation, maritime, infrastructure, and threat layers need additional data. Retrieval failures show cached or unavailable states. |
+
+The shared evidence notebook saves full findings, source/retrieval metadata, and notes to SQLite. Export includes saved evidence, imported records, camera favorites, research links, and consented visits. Exact duplicate evidence saves reuse the existing finding and preserve notes.
+
+## Exploring the workspace
+
+Ctrl/Cmd+K searches modules and saved findings. Search inputs and completed results remain in browser memory while switching modules; a page reload clears unsaved research. Watchtower events and Hawk coordinates open radius-filtered camera views. Crypto graph nodes open a connection inspector before explicitly expanding history. Skywave supports sample scrubbing and pointer readings. The evidence notebook has module filters, sorting, and notes.
+
+### Public camera directory
+
+`server/sources/camera-catalog.json` contains a dated snapshot from the [EarthCam public map](https://www.earthcam.com/mapsearch/) and [SkylineWebcams public featured directory](https://www.skylinewebcams.com/en/webcam.html). EarthCam metadata can be refreshed from the map toolbar; an unavailable provider retains cached records.
+
+Skyline pages do not publish the camera GPS position. Curated depicted places are linked to [Wikipedia GeoData coordinates](https://www.mediawiki.org/wiki/Extension:GeoData) and labeled approximate in the map inspector. Unmatched views are omitted rather than assigned invented locations. The snapshot includes source and attribution records. To rebuild it from these public sources, run `node scripts/build-camera-catalog.mjs`.
+
+Provider preview images appear inside the workbench. Live playback opens at the provider because Skyline pages block third-party framing. Add other camera pages with the inline Add camera flow; unknown pages require user-supplied coordinates. Direct media can be imported for playback and detection when CORS allows it. Favorites persist locally and are included in workspace exports. Country selection focuses the map; the Canada shortcut clears conflicting filters. Place links such as `#camera?country=Canada&place=Ottawa` also survive reload. The bundled directory includes 2,708 Canadian entries across DriveBC, Québec, Toronto, Calgary, Ottawa, and EarthCam. `node scripts/canada-ui.mjs` checks country filtering, source links, and mobile marker visibility after a production build.
+
+### Canadian public cameras
+
+The original EarthCam snapshot only contained five Canadian views at three locations. Canadian coverage now also includes [DriveBC highway cameras](https://catalogue.data.gov.bc.ca/dataset/bc-highwaycams), [Québec transport cameras](https://www.donneesquebec.ca/recherche/dataset/camera-de-circulation), [Toronto traffic cameras](https://open.toronto.ca/dataset/traffic-cameras/), [Calgary traffic cameras](https://data.calgary.ca/Transportation-Transit/Traffic-Cameras/k7p9-kppz), and [Ottawa traffic cameras](https://traffic.ottawa.ca/en/opendata). Each record keeps the publisher's coordinates, source link, attribution, licence, and retrieval time. The current additional snapshot has 1,043 DriveBC, 680 Québec, 336 Toronto, 216 Calgary, and 428 Ottawa entries (399 municipal and 29 MTO cameras).
+
+These additions primarily show periodic still images. The inspector refreshes selected snapshots automatically (Ottawa every five seconds, other sources every sixty seconds), with pause/resume controls and manual refresh. Updates stop while the tab is hidden or the camera is closed. The last successful image stays visible while its replacement loads or if a refresh fails. The displayed time is the fetch time, not the camera capture time; delayed DriveBC images are marked. Québec image links use the open GeoJSON camera codes and the image directories published on the official mobile camera pages. Its image host can reject third-party requests; a styled unavailable state keeps the official camera-page link accessible. A successful image load does not imply that the publisher has captured a new frame. Browser image analysis requires CORS, and is not enabled for these government snapshots. Ottawa snapshots use the image route and `timems` refresh parameter of the city's public traffic map. The city states that actual frames may stay the same for 5–15 seconds; this is a sequence of stills, not continuous video. Ottawa images preserve the city or MTO operator credit, and may display a provider outage card. Ottawa coordinates identify the mapped intersection or roadway location. The separate Ottawa open-data image API still requires a certificate. This is regional coverage, not an exhaustive Canada-wide inventory. Ontario 511's provincial API and Alberta 511 need developer keys; this build does not bypass those requirements.
+
+Canadian metadata is cached separately by source and refreshed after 24 hours or via the camera refresh control. Failed sources retain their last metadata while other providers can refresh. To rebuild the bundled snapshot, run `node scripts/build-canadian-catalog.mjs`. The file is only replaced when every source succeeds. Open-data attribution appears in the inspector and source list and remains in evidence exports.
+
+The filtered camera list remains available alongside the selected view. Previous/next follows the list order, and Select camera reaches every matching entry without paging through thumbnails. Crowded markers on the globe or map expose a nearby group; Show all matching cameras returns to the full filtered list. City searches focus the flat map on the matching coverage. Toolbar Refresh immediately reloads the selected image and list thumbnails while refreshing directory metadata independently. Loaded frames remain visible during image requests and failures, and paused automatic updates stay paused.
+
+City searches open the flat map automatically. Continued globe zoom switches to the detailed map, which supports zoom to individual intersections and displays camera names at close range. Clicking a numbered marker opens a searchable camera chooser directly on the map. Recognized Ottawa municipal and MTO outage cards are identified from the provider image bytes through a local image route; the provider's HTTP 200 outage cards are shown as offline, with a nearby-camera action. Camera lists and map choices identify cameras whose loaded images report an outage. All published cameras remain browsable, including offline ones.
+
+The flat map shows OpenStreetMap roads, street names, and landmarks beneath camera pins, with visible map attribution. Roads and pins use the same Web Mercator projection. Scroll zoom stays anchored at the cursor; dragging, named cluster choices, the globe, and fullscreen remain available. Map tiles require internet access. A failed tile request shows a retry action while camera selection stays usable. No map API key is needed for the default street layer.
+
+Only tiles intersecting the settled viewport are requested; browser caching is preserved and there is no offline download or prefetch feature. Street tile images send the app origin as their Referer, overriding the app's no-referrer policy for those images only, in accordance with the [OpenStreetMap tile usage policy](https://operations.osmfoundation.org/policies/tiles/). An alternative raster provider can be configured with `VITE_MAP_TILE_URL` (containing `{z}`, `{x}`, `{y}`, with zoom levels 0–19), `VITE_MAP_ATTRIBUTION_TEXT`, and `VITE_MAP_ATTRIBUTION_URL` in `.env`. Restart Vite or rebuild after changing these values. Set the attribution required by the chosen provider.
+
+With the app running, `npm run test:streets:ui` checks tile/pin alignment, cursor zoom, pan, camera choices, tile outages and retry, desktop/tablet/mobile, and fullscreen. Automated map gestures use local synthetic tile fixtures to avoid requests to public tile servers.
+
+With the app running, `node scripts/camera-city-ui.mjs` repeats the globe-zoom, on-map camera selection, real MTO outage, nearby switching, and actual municipal-image checks. `node scripts/ottawa-availability-probe.mjs` checks every published Ottawa image and writes a dated availability report under `artifacts/`; availability can change between checks.
+
+## Configure providers
+
+Copy `.env.example` to `.env` and set optional values. Restart the server after changes. No key is required for basic public-data and import workflows.
+
+- `GITHUB_TOKEN`: increases GitHub public API quota.
+- `HIBP_API_KEY`: licensed Have I Been Pwned account-breach endpoint.
+- `BLOCKSCOUT_API_KEY`: Blockscout PRO native EVM transaction lookup using `chain_id`; chain support depends on your provider.
+- `SCAN_ALLOWLIST`: exact literal IPs, domains, .onion hosts, or IPv4 CIDRs you are permitted to test. Loopback is the default. CIDR input ranges are limited to `/28`–`/32`. A domain resolving to a private address requires that address to be explicitly allowlisted too.
+- `TOR_HOST` / `TOR_PORT`: running local Tor SOCKS5 proxy. The application does not install or start Tor.
+- `PORT`: API / production frontend port, default 8787. If changed in development, also update Vite's API proxy.
+- `DB_PATH`: optional database filename.
+
+The application intentionally binds to localhost and rejects nonlocal Host/Origin headers. It has no multiuser login or internet deployment configuration. Keep this binding for local use. Remote deployment would require authentication, TLS, access control, retention settings, and a deliberate visitor-sharing design.
+
+## Imports
+
+Each module has an import panel and downloadable CSV header template. Use CSV or a JSON array (or `{ "rows": [...] }`). Up to 50,000 rows / 18 MB per file. Imports validate atomically; exact duplicate normalized rows are skipped. Use ISO 8601 timestamps with a timezone, decimal-degree coordinates, and HTTP(S) source URLs without embedded credentials.
+
+- Cameras: `name,lat,lon,url,source,kind,country`; kind is `image`, `video`, `hls`, or `page`.
+- Transfers: `chain,hash,from,to,amount,asset,timestamp,source,url`; URL optional; `amount` is a nonnegative decimal string. Failed transactions should not be exported as transfers. Give chain a consistent identifier such as `bitcoin` or `ethereum`.
+- Spectrum: `frequency_hz,dbm,timestamp,source`.
+- Events: `title,lat,lon,category,source,url,timestamp,magnitude`; URL/magnitude optional. Point GeoJSON with these properties is also supported.
+- Registry sources: `name,jurisdiction,category,url,access`; `access` defaults to manual. Use `{q}` in a source URL to substitute a search query. Imported source URLs remain manual leads; API labels do not enable arbitrary automatic querying.
+- Registry records: `title,identifier,source,url,jurisdiction,timestamp`; URL/jurisdiction/timestamp optional; JSON may also include a `details` object.
+
+No sample records are presented as real observations. The test suite uses clearly identified synthetic fixtures in an in-memory database.
+
+## Data and sources
+
+Data is stored in `data/workbench.sqlite`; the app never sends your evidence notebook or images to an AI service. Provider searches send the query to the selected provider. External media and links connect directly to their hosts. Imported data and saved evidence remain on this machine until you export them.
+
+Provider documentation: [USGS](https://earthquake.usgs.gov/earthquakes/feed/v1.0/geojson.php), [NASA EONET](https://eonet.gsfc.nasa.gov/docs/v3), [NOAA SWPC](https://www.swpc.noaa.gov/), [mempool.space](https://mempool.space/docs/api/rest), [Blockscout PRO](https://docs.blockscout.com/devs/pro-api), [GitHub](https://docs.github.com/en/rest/users/users), [Hacker News](https://github.com/HackerNews/API), [GitLab](https://docs.gitlab.com/api/users/), [GLEIF](https://www.gleif.org/en/lei-data/gleif-api), [HIBP](https://haveibeenpwned.com/API/v3), [TensorFlow COCO-SSD](https://github.com/tensorflow/tfjs-models/tree/master/coco-ssd).
+
+Geographic boundary asset: Natural Earth-derived low-resolution country polygons rendered from the local GeoJSON. Boundaries are cartographic context and not a position on sovereignty. Fonts are self-hosted DM Sans and IBM Plex Mono.
