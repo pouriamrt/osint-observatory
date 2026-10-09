@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mapY, mapLatitude, mapBounds, visibleMapTiles, MAX_MAP_LATITUDE } from '../src/lib/map-projection.ts';
+import { mapY, mapLatitude, mapBounds, visibleMapTiles, MAX_MAP_LATITUDE, mapZoomAtTileLevel } from '../src/lib/map-projection.ts';
 
 test('street projection agrees with the published OSM Hachiko tile and round-trips Canadian latitudes', () => {
   // Reference example: https://wiki.openstreetmap.org/wiki/Slippy_map_tilenames
@@ -12,6 +12,17 @@ test('street projection agrees with the published OSM Hachiko tile and round-tri
   }
   assert.equal(mapY(90), mapY(MAX_MAP_LATITUDE));
   assert.equal(mapY(-90), mapY(-MAX_MAP_LATITUDE));
+});
+
+test('street detail reaches native imagery while weather zoom stops at its regional resolution on every viewport', () => {
+  for (const viewport of [{ width: 1140, height: 530 }, { width: 358, height: 390 }, { width: 1920, height: 1080 }]) {
+    for (const level of [6, 9, 19]) {
+      const bounds = mapBounds({ lat: 45.4215, lon: -75.6972 }, mapZoomAtTileLevel(level, viewport), viewport);
+      const tiles = visibleMapTiles(bounds, viewport.width, level);
+      assert(tiles.length > 0 && tiles.every(tile => tile.zoom === level));
+      assert(Math.abs(tiles[0].size / bounds.width * viewport.width - 256) < 1e-6, 'The zoom limit shows native pixels rather than one enlarged flat pixel');
+    }
+  }
 });
 
 test('street requests cover only the visible tile matrix at bounded native zoom', () => {

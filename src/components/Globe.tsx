@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-import { Globe2, Map as MapIcon, Minus, Plus, RotateCcw, Maximize2 } from 'lucide-react';
+import { Globe2, Map as MapIcon, Satellite, Minus, Plus, RotateCcw, Maximize2 } from 'lucide-react';
 import { cameraColor } from '../lib/camera-colors';
 import type { Row } from '../lib/api';
 import StreetMapTiles from './StreetMapTiles';
-import { mapBounds, mapLatitude, mapY } from '../lib/map-projection';
+import SatelliteMap, { SatelliteControls, useSatelliteImagery } from './SatelliteMap';
+import { mapBounds, mapLatitude, mapY, mapZoomAtTileLevel } from '../lib/map-projection';
 type Point = { id: string; lat: number; lon: number; title?: string; name?: string; category?: string; magnitude?: number; provider?: string; cameraStatus?: string };
 type Runtime = { scene: THREE.Scene; camera: THREE.PerspectiveCamera; controls: OrbitControls; markers: THREE.InstancedMesh | null; ids: string[]; select: THREE.Mesh; dirty: () => void; focus: (lat: number, lon: number) => void; reset: () => void; detail: () => void; cancelFocus: () => void };
 const point3 = (lat: number, lon: number, radius = 1) => { const a = lat * Math.PI / 180, b = lon * Math.PI / 180; return new THREE.Vector3(radius * Math.cos(a) * Math.sin(b), radius * Math.sin(a), radius * Math.cos(a) * Math.cos(b)); };
@@ -13,18 +14,22 @@ const MAX_MAP_ZOOM = 65536;
 const colorFor = (p: Point) => p.cameraStatus === 'offline' ? '#8b9398' : p.category === 'Earthquake' ? '#efb66c' : cameraColor(p.provider || 'EarthCam');
 let geography: Promise<Row> | undefined;
 const loadGeo = () => geography ||= fetch('/geo/countries.geojson').then(r => { if (!r.ok) throw new Error('Map boundaries are unavailable.'); return r.json(); }).catch(e => { geography = undefined; throw e; });
-export default function Globe({ points, selected, onSelect, focus, onCluster }: { points: Point[]; selected?: string; onSelect: (id: string) => void; focus?: { lat: number; lon: number; span?: { lat: number; lon: number }; radius?: number } | null; onCluster?: (ids: string[]) => void }) {
+export default function Globe({ points, selected, onSelect, focus, onCluster, initialView = 'auto' }: { points: Point[]; selected?: string; onSelect: (id: string) => void; focus?: { lat: number; lon: number; span?: { lat: number; lon: number }; radius?: number; key?: string } | null; onCluster?: (ids: string[]) => void; initialView?: 'auto' | 'globe' | 'map' | 'satellite' }) {
   const host = useRef<HTMLDivElement>(null), runtime = useRef<Runtime | null>(null), selectRef = useRef(onSelect), wrap = useRef<HTMLDivElement>(null);
   const pointsRef = useRef(points), clusterRef = useRef(onCluster), detailZoom = useRef(false);
-  const [view, setView] = useState<'auto' | 'globe' | 'map'>('auto'), [geo, setGeo] = useState<Row | null>(null), [error, setError] = useState(''), [hover, setHover] = useState<{ id: string; x: number; y: number } | null>(null);
+  const [view, setView] = useState(initialView), [geo, setGeo] = useState<Row | null>(null), [error, setError] = useState(''), [hover, setHover] = useState<{ id: string; x: number; y: number } | null>(null);
   const [zoom, setZoom] = useState(1), [center, setCenter] = useState({ lon: 0, lat: 0 }), [viewport, setViewport] = useState({ width: 800, height: 450 });
-  const mapState = useRef({ zoom, center, viewport }); mapState.current = { zoom, center, viewport };
   selectRef.current = onSelect;
   pointsRef.current = points; clusterRef.current = onCluster;
   const selectedPoint = points.find(p => p.id === selected);
   const focusSpan = focus?.span || (focus?.radius ? { lat: focus.radius * 2 / 111, lon: focus.radius * 2 / (111 * Math.max(.1, Math.cos(focus.lat * Math.PI / 180))) } : null);
   const localFocus = !!focusSpan && focusSpan.lon < 15 && focusSpan.lat < 10;
-  const flat = view === 'map' || (view === 'auto' && localFocus);
+  const satellite = view === 'satellite';
+  const flat = satellite || view === 'map' || (view === 'auto' && localFocus);
+  const imagery = useSatelliteImagery(satellite), [tileLoading, setTileLoading] = useState(true);
+  const maxMapZoom = satellite ? mapZoomAtTileLevel(imagery.source?.maxZoom ?? (imagery.detailed ? 19 : 9), viewport) : MAX_MAP_ZOOM;
+  const mapState = useRef({ zoom, center, viewport, maxMapZoom }); mapState.current = { zoom, center, viewport, maxMapZoom };
+  useEffect(() => { if (satellite) setZoom(value => Math.min(value, maxMapZoom)); }, [satellite, maxMapZoom]);
   const [candidateIds, setCandidateIds] = useState<string[]>([]), [candidateQuery, setCandidateQuery] = useState('');
   const candidateRows = points.filter(p => candidateIds.includes(p.id) && (p.name || p.title || '').toLowerCase().includes(candidateQuery.toLowerCase()));
   useEffect(() => {
@@ -34,9 +39,10 @@ export default function Globe({ points, selected, onSelect, focus, onCluster }: 
   useEffect(() => {
     const element = host.current; if (!flat || !element) return;
     const wheel = (event: WheelEvent) => {
+      if ((event.target as Element).closest('.map-attribution, button, select, input')) return;
       event.preventDefault();
       const current = mapState.current, bounds = mapBounds(current.center, current.zoom, current.viewport), rect = element.getBoundingClientRect();
-      const nextZoom = Math.max(1, Math.min(MAX_MAP_ZOOM, current.zoom * (event.deltaY < 0 ? 1.18 : .85)));
+      const nextZoom = Math.max(1, Math.min(current.maxMapZoom, current.zoom * (event.deltaY < 0 ? 1.18 : .85)));
       const next = mapBounds(current.center, nextZoom, current.viewport), px = (event.clientX - rect.left) / rect.width, py = (event.clientY - rect.top) / rect.height;
       setCenter({ lon: bounds.x + px * bounds.width - (px - .5) * next.width - 180, lat: mapLatitude(bounds.y + py * bounds.height - (py - .5) * next.height) });
       setZoom(nextZoom);
@@ -45,7 +51,7 @@ export default function Globe({ points, selected, onSelect, focus, onCluster }: 
     return () => element.removeEventListener('wheel', wheel);
   }, [flat]);
   const focusHeight = focusSpan && focus ? mapY(focus.lat - focusSpan.lat / 2) - mapY(focus.lat + focusSpan.lat / 2) : 0;
-  const focusZoom = focusSpan ? Math.max(1, Math.min(MAX_MAP_ZOOM, Math.min(360, 360 * viewport.width / viewport.height) / (Math.max(.02, focusSpan.lon, focusHeight * viewport.width / viewport.height) * 1.35))) : 4;
+  const focusZoom = focusSpan ? Math.max(1, Math.min(maxMapZoom, Math.min(360, 360 * viewport.width / viewport.height) / (Math.max(.002, focusSpan.lon, focusHeight * viewport.width / viewport.height) * 1.35))) : 4;
   useEffect(() => { loadGeo().then(setGeo).catch(e => setError(e.message)); }, []);
   useEffect(() => { const el = host.current; if (!el) return; const resize = new ResizeObserver(() => { const rect = el.getBoundingClientRect(); setViewport({ width: Math.max(1, rect.width), height: Math.max(1, rect.height) }); }); resize.observe(el); return () => resize.disconnect(); }, []);
   useEffect(() => {
@@ -127,19 +133,21 @@ export default function Globe({ points, selected, onSelect, focus, onCluster }: 
     if (r) { r.select.visible = !!p; if (p) { const normal = point3(p.lat, p.lon); r.select.position.copy(normal.clone().multiplyScalar(1.035)); r.select.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), normal); r.focus(p.lat, p.lon); } r.dirty(); }
     if (flat && p) { setCenter({ lat: p.lat, lon: p.lon }); setZoom(old => Math.max(old, focus ? focusZoom : 3)); }
   }, [selected, selectedPoint?.lat, selectedPoint?.lon, flat, geo, focusZoom]);
-  useEffect(() => { if (!focus) { detailZoom.current = false; return; } if (!selectedPoint) runtime.current?.focus(focus.lat, focus.lon); if (flat) { if (!selectedPoint) setCenter({ lat: focus.lat, lon: focus.lon }); setZoom(detailZoom.current ? 2048 : focusZoom); detailZoom.current = false; } }, [focus?.lat, focus?.lon, flat, geo, focusZoom]);
+  useEffect(() => { if (!focus) { detailZoom.current = false; return; } if (!selectedPoint) runtime.current?.focus(focus.lat, focus.lon); if (flat) { if (!selectedPoint) setCenter({ lat: focus.lat, lon: focus.lon }); setZoom(detailZoom.current ? Math.min(2048, maxMapZoom) : focusZoom); detailZoom.current = false; } }, [focus?.lat, focus?.lon, focus?.key, flat, geo, focusZoom]);
   const bounds = mapBounds(center, zoom, viewport), { width, height, x, y } = bounds;
   const clusters = useMemo(() => { const groups = new Map<string, Point[]>(), size = 32 * Math.min(360, 360 * viewport.width / viewport.height) / (zoom * viewport.width); for (const p of points.slice(0, 5000)) { const key = `${Math.floor((p.lon + 180) / size)}:${Math.floor(mapY(p.lat) / size)}`; if (!groups.has(key)) groups.set(key, []); groups.get(key)!.push(p); } return [...groups].map(([id, rows]) => ({ id, rows, lat: mapLatitude(rows.reduce((s, p) => s + mapY(p.lat), 0) / rows.length), lon: rows.reduce((s, p) => s + p.lon, 0) / rows.length })); }, [points, zoom, viewport.width, viewport.height]);
   const path = (ring: number[][]) => ring.map(([lon, lat], i) => `${i ? 'L' : 'M'}${lon + 180},${mapY(lat)}`).join(' ') + 'Z';
   const unitsPerPixel = Math.max(width / viewport.width, height / viewport.height);
   const hoverPoint = points.find(p => p.id === hover?.id);
-  function zoomBy(factor: number) { if (flat) setZoom(z => Math.max(1, Math.min(MAX_MAP_ZOOM, z * factor))); else { const r = runtime.current; if (!r) return; r.cancelFocus(); if (r.camera.position.length() / factor <= 1.05) r.detail(); else { r.camera.position.multiplyScalar(1 / factor); r.controls.update(); r.dirty(); } } }
+  function zoomBy(factor: number) { if (flat) setZoom(z => Math.max(1, Math.min(maxMapZoom, z * factor))); else { const r = runtime.current; if (!r) return; r.cancelFocus(); if (r.camera.position.length() / factor <= 1.05) r.detail(); else { r.camera.position.multiplyScalar(1 / factor); r.controls.update(); r.dirty(); } } }
   const drag = useRef<{ x: number; y: number; lon: number; lat: number } | null>(null);
   return <div ref={wrap} className="globe-area">
-    <div ref={host} className={`globe-canvas ${flat ? 'flat' : ''}`}>
+    {satellite && <SatelliteControls imagery={imagery} atMaxZoom={zoom >= maxMapZoom * .99} loading={tileLoading} />}
+    <div className="globe-stage">
+    <div ref={host} className={`globe-canvas ${flat ? 'flat' : ''} ${satellite ? 'satellite' : ''}`}>
       {flat && <>
-        <StreetMapTiles bounds={bounds} viewport={viewport} />
-        <svg viewBox={`${x} ${y} ${width} ${height}`} role="img" aria-label="World map with research locations" className="flat-map"
+        {satellite ? <SatelliteMap bounds={bounds} viewport={viewport} imagery={imagery} onLoading={setTileLoading} /> : <StreetMapTiles bounds={bounds} viewport={viewport} />}
+        <svg viewBox={`${x} ${y} ${width} ${height}`} role="img" aria-label={satellite ? 'Satellite map with research locations' : 'World map with research locations'} className="flat-map"
           onPointerDown={e => {
             if ((e.target as Element).closest('.map-point')) return;
             drag.current = { x: e.clientX, y: e.clientY, lon: center.lon, lat: center.lat };
@@ -162,7 +170,7 @@ export default function Globe({ points, selected, onSelect, focus, onCluster }: 
             const multiple = c.rows.length > 1, p = c.rows[0], activate = () => {
               const nearby = onCluster ? clusters.filter(other => Math.hypot(other.lon - c.lon, mapY(other.lat) - mapY(c.lat)) <= 24 * unitsPerPixel).flatMap(other => other.rows) : c.rows;
               if (nearby.length > 1) {
-                setCenter({ lon: c.lon, lat: c.lat }); setZoom(z => Math.min(MAX_MAP_ZOOM, z * 2));
+                setCenter({ lon: c.lon, lat: c.lat }); setZoom(z => Math.min(maxMapZoom, z * 2));
                 setCandidateIds(nearby.map(p => p.id)); setCandidateQuery(''); onCluster?.(nearby.map(p => p.id));
               } else { setCandidateIds([]); onSelect(p.id); }
             };
@@ -182,12 +190,13 @@ export default function Globe({ points, selected, onSelect, focus, onCluster }: 
     </div>
     <div className="map-controls">
       <div className="segmented">
-        <button aria-label="3D globe" className={!flat ? 'active' : ''} onClick={() => { setView('globe'); setCandidateIds([]); }}><Globe2 size={15} />Globe</button>
-        <button aria-label="World map" title="Street map" className={flat ? 'active' : ''} onClick={() => { setView('map'); setCenter(selectedPoint || focus || center); setZoom(focusZoom); setCandidateIds([]); }}><MapIcon size={15} />Map</button>
+        <button aria-label="3D globe" aria-pressed={!flat} className={!flat ? 'active' : ''} onClick={() => { setView('globe'); setCandidateIds([]); }}><Globe2 size={15} />Globe</button>
+        <button aria-label="World map" aria-pressed={flat && !satellite} title="Street map" className={flat && !satellite ? 'active' : ''} onClick={() => { setView('map'); setCenter(selectedPoint || focus || center); setZoom(focusZoom); setCandidateIds([]); }}><MapIcon size={15} />Map</button>
+        <button aria-label="Satellite map" aria-pressed={satellite} className={satellite ? 'active' : ''} onClick={() => { setView('satellite'); setCandidateIds([]); }}><Satellite size={15} />Satellite</button>
       </div>
       <div className="segmented">
-        <button aria-label="Zoom in" onClick={() => zoomBy(1.25)}><Plus size={16} /></button>
-        <button aria-label="Zoom out" onClick={() => zoomBy(.8)}><Minus size={16} /></button>
+        <button aria-label="Zoom in" disabled={flat && zoom >= maxMapZoom * .999} onClick={() => zoomBy(1.25)}><Plus size={16} /></button>
+        <button aria-label="Zoom out" disabled={flat && zoom <= 1} onClick={() => zoomBy(.8)}><Minus size={16} /></button>
         <button aria-label="Reset globe" onClick={() => { runtime.current?.reset(); setZoom(1); setCenter({ lat: 0, lon: 0 }); }}><RotateCcw size={15} /></button>
         <button aria-label="Expand map" onClick={() => { if (document.fullscreenElement) void document.exitFullscreen(); else void wrap.current?.requestFullscreen().catch(() => setError('Fullscreen is unavailable in this browser.')); }}><Maximize2 size={15} /></button>
       </div>
@@ -201,7 +210,8 @@ export default function Globe({ points, selected, onSelect, focus, onCluster }: 
       </div>
     </section>}
     {hover && hoverPoint && <div className="globe-tooltip" style={{ left: hover.x, top: hover.y }}><strong>{hoverPoint.name || hoverPoint.title}</strong><span>{hoverPoint.provider || hoverPoint.category} · Select to inspect</span></div>}
-    <div className={`map-caption ${flat ? 'street-caption' : ''}`}><span>{flat ? 'Drag to pan · Scroll to zoom · Select a pin' : 'Drag to rotate · Zoom in for the detailed map'}</span><span>{points.length.toLocaleString()} locations{points.length > 5000 ? ' · first 5,000 plotted' : ''}</span></div>
+    <div className={`map-caption ${flat ? 'street-caption' : ''}`}><span>{flat ? points.length ? 'Drag to pan · Scroll to zoom · Select a pin' : 'Drag to pan · Scroll to zoom' : 'Drag to rotate · Zoom in for the detailed map'}</span>{points.length > 0 && <span>{points.length.toLocaleString()} locations{points.length > 5000 ? ' · first 5,000 plotted' : ''}</span>}</div>
     {error && <p className="map-error">{error}</p>}
+    </div>
   </div>;
 }

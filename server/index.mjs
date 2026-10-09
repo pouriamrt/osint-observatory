@@ -10,11 +10,16 @@ import { hazardFeeds, usernames, breachLookup, cryptoTrace, catalogueSearch, fet
 import { passiveDNS, certificateNames, scanNetwork } from './network.mjs';
 import { cameraDirectory, resolveCameraPage } from './cameras.mjs';
 import { ottawaSnapshot } from './camera-images.mjs';
+import { createSatelliteProvider } from './satellite.mjs';
+import { findPlaces } from './places.mjs';
+import { createLiveViewsProvider } from './live-views.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const escape = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 export function createApp({ store = openStore(process.env.DB_PATH || resolve(root, 'data/workbench.sqlite')), scopes = String(process.env.SCAN_ALLOWLIST || '127.0.0.1,::1,localhost').split(',').map(s => s.trim().toLowerCase()).filter(Boolean) } = {}) {
   const app = express(); app.disable('x-powered-by'); app.set('trust proxy', false);
+  const satelliteCatalogue = createSatelliteProvider();
+  const liveViews = createLiveViewsProvider();
   app.use((req, res, next) => {
     const hostname = req.hostname;
     if (!['127.0.0.1', 'localhost', '[::1]', '::1'].includes(hostname)) return res.status(403).json({ error: 'This workspace accepts localhost requests only.' });
@@ -27,12 +32,15 @@ export function createApp({ store = openStore(process.env.DB_PATH || resolve(roo
   app.use(express.json({ limit: '20mb' }));
   const limited = new Map();
   app.use('/api', (req, res, next) => {
-    if (!['/username', '/breaches', '/crypto', '/netscan', '/dns', '/certificates', '/catalogue', '/cameras/resolve'].some(p => req.path === p)) return next();
+    if (!['/username', '/breaches', '/crypto', '/netscan', '/dns', '/certificates', '/catalogue', '/cameras/resolve', '/places', '/live-views'].some(p => req.path === p)) return next();
     const key = req.path, recent = (limited.get(key) || []).filter(t => Date.now() - t < 60000);
     if (recent.length >= 15) return res.status(429).json({ error: 'Please wait a minute before running more lookups.' });
     limited.set(key, [...recent, Date.now()]); next();
   });
   app.get('/api/health', (req, res) => res.json({ status: 'ready', retrievedAt: now() }));
+  app.get('/api/satellite', async (req, res) => res.json(await satelliteCatalogue(req.query.refresh === '1')));
+  app.get('/api/live-views', async (req, res) => res.json(await liveViews(req.query.refresh === '1')));
+  app.get('/api/places', async (req, res) => res.json(await findPlaces(z.string().trim().min(2).max(200).parse(req.query.query))));
   app.get('/api/config', (req, res) => res.json({ chains, registries: [...registries, ...store.list('registry')], scopes, providers: { github: !!process.env.GITHUB_TOKEN, hibp: !!process.env.HIBP_API_KEY, blockscout: !!process.env.BLOCKSCOUT_API_KEY }, counts: Object.fromEntries(Object.keys(importSchemas).map(m => [m, store.db.prepare('SELECT COUNT(*) AS count FROM records WHERE module=?').get(m).count])), evidenceCount: store.evidence().length }));
   app.get('/api/records/:module', (req, res) => { if (!importSchemas[req.params.module]) fail('Unknown record type.', 404); res.json(store.list(req.params.module)); });
   app.get('/api/cameras', async (req, res) => res.json(await cameraDirectory(store, req.query.refresh === '1')));

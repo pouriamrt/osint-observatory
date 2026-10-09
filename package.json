@@ -12,7 +12,10 @@
     "check": "npm run build && npm test",
     "test:ui": "node scripts/ui-smoke.mjs",
     "test:cameras:ui": "node scripts/camera-browsing-ui.mjs",
-    "test:streets:ui": "node scripts/street-map-ui.mjs"
+    "test:streets:ui": "node scripts/street-map-ui.mjs",
+    "test:satellite:ui": "node scripts/satellite-ui.mjs",
+    "test:satellite:detail": "node scripts/satellite-detail-ui.mjs",
+    "test:live-views:ui": "node scripts/live-views-ui.mjs"
   },
   "dependencies": {
     "@fontsource/dm-sans": "^5.2.8",

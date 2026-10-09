@@ -34,3 +34,9 @@ jobs:
         run: npx playwright install --with-deps chromium
       - name: Check camera browsing
         run: npm run test:cameras:ui
+      - name: Check satellite imagery and space video
+        run: npm run test:satellite:ui
+      - name: Check street-level satellite exploration
+        run: npm run test:satellite:detail
+      - name: Check live cameras and satellite video
+        run: npm run test:live-views:ui
