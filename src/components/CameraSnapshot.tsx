@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Pause, Play, RefreshCw } from 'lucide-react';
+import { Maximize2, Minimize2, Pause, Play, RefreshCw } from 'lucide-react';
 import PreviewImage, { type PreviewState } from './PreviewImage';
 import { type Row } from '../lib/api';
 import { cameraImageUrl } from '../lib/camera-images';
@@ -13,7 +13,18 @@ export default function CameraSnapshot({ item, refreshVersion = 0, onTryAnother,
   const [visible, setVisible] = useState(!document.hidden);
   const [state, setState] = useState<PreviewState>({ status: item.thumbnail ? 'loading' : 'unavailable' });
   const seenRefresh = useRef(refreshVersion);
+  const panel = useRef<HTMLDivElement>(null), [expanded, setExpanded] = useState(false), [expandError, setExpandError] = useState('');
   const imageUrl = cameraImageUrl(item, version);
+  useEffect(() => {
+    const changed = () => setExpanded(document.fullscreenElement === panel.current);
+    document.addEventListener('fullscreenchange', changed);
+    return () => document.removeEventListener('fullscreenchange', changed);
+  }, []);
+  async function expand() {
+    setExpandError('');
+    try { if (document.fullscreenElement === panel.current) await document.exitFullscreen(); else await panel.current?.requestFullscreen(); }
+    catch { setExpandError('The browser could not expand this view. Try again or open the camera provider.'); }
+  }
   function refresh() { if (!cameraImageUrl(item, 0)) return; setState(old => ({ ...old, status: 'loading' })); setVersion(previous => Math.max(Date.now(), previous + 1)); }
   useEffect(() => {
     if (seenRefresh.current === refreshVersion) return;
@@ -34,12 +45,14 @@ export default function CameraSnapshot({ item, refreshVersion = 0, onTryAnother,
     const timer = setTimeout(refresh, intervalSeconds * 1000);
     return () => clearTimeout(timer);
   }, [snapshot, automatic, visible, loading, intervalSeconds, version, imageUrl]);
-  return <div className="camera-preview-panel">
+  return <div className="camera-preview-panel" ref={panel}>
+    {imageUrl && <div className="camera-view-toolbar"><span>{item.name}</span><button className="button small" aria-label={expanded ? 'Exit expanded camera view' : 'Expand camera view'} onClick={() => void expand()}>{expanded ? <Minimize2 size={14} /> : <Maximize2 size={14} />}{expanded ? 'Exit full screen' : 'Expand view'}</button></div>}
     <div className={`camera-preview-image ${state.hasImage ? 'has-frame' : ''}`} aria-busy={loading}>
       <PreviewImage src={imageUrl} alt={`${item.name} · provider preview`} eager retainPrevious onStateChange={setState} />
       {loading && <span className={state.hasImage ? 'camera-image-updating' : 'camera-image-loading'}><RefreshCw size={state.hasImage ? 13 : 20} className="spin" /><span>{state.hasImage ? 'Updating…' : 'Loading preview…'}</span></span>}
       {state.status === 'loaded' && <span className="preview-credit">{snapshot ? 'Snapshot' : 'Preview'} from {item.source}</span>}
     </div>
+    {expandError && <p className="camera-expand-error" role="alert">{expandError}</p>}
     {(snapshot || failed || state.status === 'unavailable') && <div className="camera-snapshot-controls">
       {offline && <div className="camera-offline-notice"><strong>Camera currently offline</strong>{onTryAnother && <button className="button small" onClick={onTryAnother}>Try a nearby camera</button>}</div>}
       {item.thumbnail && <div className="snapshot-actions"><button className="button small" disabled={loading} onClick={refresh}><RefreshCw size={14} className={loading ? 'spin' : ''} />{loading ? 'Loading snapshot…' : failed ? 'Retry snapshot' : 'Refresh snapshot'}</button>{snapshot && <button className="button small" aria-pressed={automatic} onClick={() => setAutomatic(value => !value)}>{automatic ? <Pause size={14} /> : <Play size={14} />}{automatic ? 'Pause updates' : 'Resume updates'}</button>}</div>}

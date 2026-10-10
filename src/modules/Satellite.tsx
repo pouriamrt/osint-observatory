@@ -3,23 +3,45 @@ import { Camera, Play, RefreshCw, Square, Search, MapPin, X } from 'lucide-react
 import Globe from '../components/Globe';
 import { External, PageTitle } from '../components/common';
 import { api } from '../lib/api';
-import { NASA_ISS_PLAYLIST, SATELLITE_PLACES, type MapPlace } from '../lib/satellite';
+import { NASA_ISS_PLAYLIST, SATELLITE_PLACES, satelliteLocationFromRoute, type MapPlace } from '../lib/satellite';
+import { distance } from '../lib/geometry';
 import SatelliteCameras, { CameraMapControls, useMapCameras } from '../components/SatelliteCameras';
 import { useLiveViews, type MapCamera } from '../lib/live-views';
 
 export default function Satellite() {
+  const [initialLocation] = useState(() => satelliteLocationFromRoute(window.location.hash));
+  const arrival = useRef({ pending: initialLocation?.showCameras || false, pinned: !!initialLocation });
   const [streamId, setStreamId] = useState('earth'), [playing, setPlaying] = useState(false), [reload, setReload] = useState(0);
-  const [place, setPlace] = useState<MapPlace>(SATELLITE_PLACES[0]), [query, setQuery] = useState(''), [results, setResults] = useState<MapPlace[]>([]), [busy, setBusy] = useState(false), [searchError, setSearchError] = useState(''), [searched, setSearched] = useState(false);
+  const [place, setPlace] = useState<MapPlace>(initialLocation?.place || SATELLITE_PLACES[0]), [query, setQuery] = useState(''), [results, setResults] = useState<MapPlace[]>([]), [busy, setBusy] = useState(false), [searchError, setSearchError] = useState(''), [searched, setSearched] = useState(false);
   const searchRequest = useRef<AbortController | null>(null), focusVersion = useRef(0);
-  const liveViews = useLiveViews(), cameras = useMapCameras(place, liveViews.data.cameras);
+  const liveViews = useLiveViews(), cameras = useMapCameras(place, liveViews.data.cameras, initialLocation?.radius);
   const [clipPlaying, setClipPlaying] = useState(false);
   useEffect(() => () => searchRequest.current?.abort(), []);
+  useEffect(() => {
+    const read = () => {
+      const next = satelliteLocationFromRoute(window.location.hash); if (!next) return;
+      choosePlace(next.place); arrival.current = { pending: next.showCameras, pinned: true };
+      cameras.setRadius(next.radius); cameras.setEnabled(true); cameras.setFilter('all'); cameras.setQuery('');
+    };
+    window.addEventListener('hashchange', read);
+    return () => window.removeEventListener('hashchange', read);
+  }, []);
+  useEffect(() => {
+    if (!arrival.current.pending || cameras.inventory.busy) return;
+    arrival.current.pending = false;
+    const closest = cameras.nearby.find(camera => camera.availability !== 'offline' && camera.status !== 'unavailable') || cameras.nearby[0];
+    cameras.select(closest?.id || '');
+    const frame = requestAnimationFrame(() => document.getElementById('satellite-cameras')?.scrollIntoView({ block: 'start' }));
+    return () => cancelAnimationFrame(frame);
+  }, [place.key, cameras.inventory.busy, cameras.nearby, cameras.select]);
   function choosePlace(next: MapPlace) {
+    arrival.current = { pending: false, pinned: false };
     searchRequest.current?.abort(); setBusy(false); setResults([]); setSearched(false); setSearchError('');
     cameras.select('');
     setPlace({ ...next, key: String(++focusVersion.current) });
   }
   function chooseCamera(camera: MapCamera) {
+    if (arrival.current.pinned && distance(place, camera) <= cameras.radius * 1000) { cameras.select(camera.id); return; }
     choosePlace({ id: camera.id, name: camera.name, lat: camera.lat, lon: camera.lon, span: { lat: .012, lon: .016 } });
     cameras.select(camera.id);
   }

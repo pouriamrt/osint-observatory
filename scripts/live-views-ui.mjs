@@ -44,7 +44,14 @@ try {
   assert(images.length > firstCount, 'Snapshots request another frame on their timer');
   await selected.getByRole('button', { name: 'Pause updates', exact: true }).click();
   const pausedCount = images.length; await page.clock.runFor(61000); assert.equal(images.length, pausedCount);
+  await selected.getByRole('button', { name: 'Expand camera view', exact: true }).click();
+  await page.waitForFunction(() => document.fullscreenElement?.classList.contains('camera-preview-panel'));
+  assert.equal(await selected.locator('.camera-preview-image img').evaluate(image => getComputedStyle(image).objectFit), 'contain');
+  assert(await selected.getByRole('button', { name: 'Resume updates', exact: true }).isVisible());
+  await selected.getByRole('button', { name: 'Exit expanded camera view', exact: true }).click();
+  await page.waitForFunction(() => document.fullscreenElement === null);
   report.checks.push('Satellite camera pins open nearby Canadian snapshots; frame refresh and pause work with honest source labels');
+  report.checks.push('Satellite camera previews share the fullscreen expand/exit control and retain snapshot controls and the full source frame');
 
   await page.getByLabel('Camera pins', { exact: false }).uncheck();
   assert.equal(await page.locator('.map-point').count(), 0);

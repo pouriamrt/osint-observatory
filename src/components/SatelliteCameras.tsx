@@ -5,12 +5,12 @@ import CameraSnapshot from './CameraSnapshot';
 import { nearbyCameraRoute, safeUrl, useData, type Row } from '../lib/api';
 import { distance } from '../lib/geometry';
 import { cameraViewKind, cameraViewLabel, type LiveView, type MapCamera } from '../lib/live-views';
-import type { MapPlace } from '../lib/satellite';
+import { SATELLITE_CAMERA_RADII, type MapPlace } from '../lib/satellite';
 
-export function useMapCameras(place: MapPlace, live: LiveView[]) {
+export function useMapCameras(place: MapPlace, live: LiveView[], initialRadius = 25) {
   const inventory = useData<{ cameras: MapCamera[]; sources: Row[] }>('/cameras', { cameras: [], sources: [] });
-  const [enabled, setEnabled] = useState(true), [radius, setRadius] = useState(25), [filter, setFilter] = useState('all'), [query, setQuery] = useState(''), [selected, select] = useState('');
-  const featured = useMemo(() => live.filter(view => typeof view.lat === 'number' && typeof view.lon === 'number').map(view => ({ ...view, lat: view.lat!, lon: view.lon!, kind: 'youtube', source: view.provider, url: view.sourceURL })), [live]);
+  const [enabled, setEnabled] = useState(true), [radius, setRadius] = useState(initialRadius), [filter, setFilter] = useState('all'), [query, setQuery] = useState(''), [selected, select] = useState('');
+  const featured = useMemo<MapCamera[]>(() => live.filter(view => typeof view.lat === 'number' && typeof view.lon === 'number').map(view => ({ ...view, lat: view.lat!, lon: view.lon!, kind: 'youtube', source: view.provider, url: view.sourceURL })), [live]);
   const cameras = useMemo(() => [...featured, ...inventory.data.cameras.filter(camera => Number.isFinite(camera.lat) && Number.isFinite(camera.lon) && !featured.some(view => view.sourceURL === camera.url))], [featured, inventory.data.cameras]);
   const nearby = useMemo(() => cameras.filter(camera => distance(place, camera) <= radius * 1000 && (filter === 'all' || cameraViewKind(camera) === filter) && `${camera.name} ${camera.country || ''} ${camera.provider || ''}`.toLowerCase().includes(query.trim().toLowerCase())).sort((a, b) => distance(place, a) - distance(place, b)), [cameras, place, radius, filter, query]);
   const item = cameras.find(camera => camera.id === selected);
@@ -21,7 +21,7 @@ type CameraViews = ReturnType<typeof useMapCameras>;
 export function CameraMapControls({ views }: { views: CameraViews }) {
   return <div className="satellite-camera-controls">
     <label><input type="checkbox" checked={views.enabled} onChange={event => views.setEnabled(event.target.checked)} /> <Camera size={15} />Camera pins</label>
-    <label>Nearby radius<select aria-label="Nearby satellite cameras radius" value={views.radius} onChange={event => views.setRadius(Number(event.target.value))}>{[10, 25, 100].map(radius => <option key={radius} value={radius}>{radius} km</option>)}</select></label>
+    <label>Nearby radius<select aria-label="Nearby satellite cameras radius" value={views.radius} onChange={event => views.setRadius(Number(event.target.value))}>{SATELLITE_CAMERA_RADII.map(radius => <option key={radius} value={radius}>{radius} km</option>)}</select></label>
     <span>{views.inventory.busy ? 'Loading camera directory…' : `${views.nearby.length} matching cameras near this place`}</span>
     <button className="text-button" onClick={() => document.getElementById('satellite-cameras')?.scrollIntoView({ behavior: 'smooth' })}>Browse & watch cameras</button>
   </div>;

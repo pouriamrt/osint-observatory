@@ -180,6 +180,8 @@ export default function Globe({ points, selected, onSelect, focus, onCluster, in
               <circle r={18 * unitsPerPixel} style={{ fill: 'transparent', stroke: 'none' }} />
               <circle r={(multiple ? 10 : selected === p.id ? 7 : 5) * unitsPerPixel} vectorEffect="non-scaling-stroke"
                 style={{ fill: multiple ? '#ccede1' : colorFor(p), strokeWidth: c.rows.some(row => row.id === selected) ? 3 : 1.5, stroke: c.rows.some(row => row.id === selected) ? '#1c5549' : '#18372d' }} />
+              <circle className="map-focus-ring" r={14 * unitsPerPixel} vectorEffect="non-scaling-stroke" aria-hidden="true" style={{ fill: 'none', stroke: '#08161d', strokeWidth: 4 }} />
+              <circle className="map-focus-ring" r={14 * unitsPerPixel} vectorEffect="non-scaling-stroke" aria-hidden="true" style={{ fill: 'none', stroke: '#f1fbf5', strokeWidth: 2 }} />
               <title>{multiple ? c.rows.map(p => p.name || p.title).join('\n') : p.name || p.title}</title>
               {multiple && <text textAnchor="middle" dominantBaseline="central" fontSize={11 * unitsPerPixel} fill="#10251f">{c.rows.length}</text>}
               {!multiple && (zoom >= 4096 || selected === p.id && zoom >= 1024) && <text x={10 * unitsPerPixel} y={4 * unitsPerPixel} fontSize={11 * unitsPerPixel} fill="#10251f" stroke="#f7f9f3" strokeWidth={3 * unitsPerPixel} paintOrder="stroke">{(p.name || p.title || '').slice(0, 38)}</text>}

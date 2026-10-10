@@ -59,6 +59,20 @@ try {
   assert.deepEqual(await page.locator('#camera-selection option:not([value=""])').evaluateAll(options => options.map(option => option.value)), ottawa.map(c => c.id));
   await page.getByLabel('Select camera', { exact: true }).selectOption(ottawa[0].id);
   await loaded(); await pause();
+  const previewBox = await page.locator('.camera-preview-image').boundingBox(), workspaceBox = await page.locator('.camera-workspace').boundingBox(), mapBox = await page.locator('.camera-workspace .globe-canvas').boundingBox();
+  assert(previewBox.width >= 600 && previewBox.width >= workspaceBox.width * .6, 'Camera Globe gives the selected view most of the lower workspace');
+  assert(mapBox.width >= workspaceBox.width - 2 && mapBox.height >= 520, 'The map spans the full workspace at the same scale as Satellite views');
+  assert.equal(await selectedImage.evaluate(image => getComputedStyle(image).objectFit), 'contain', 'The complete camera frame stays visible');
+  await page.getByRole('button', { name: 'Expand camera view', exact: true }).click();
+  await page.waitForFunction(() => document.fullscreenElement?.classList.contains('camera-preview-panel'));
+  const expandedBox = await selectedImage.boundingBox(), viewport = page.viewportSize();
+  assert(expandedBox.width >= viewport.width - 2 && expandedBox.height >= viewport.height * .6, 'Expanded camera frames fill the viewing area');
+  assert(await page.getByRole('button', { name: 'Refresh snapshot', exact: true }).isVisible());
+  assert(await page.getByRole('button', { name: 'Resume updates', exact: true }).isVisible());
+  await page.getByRole('button', { name: 'Exit expanded camera view', exact: true }).click();
+  await page.waitForFunction(() => document.fullscreenElement === null);
+  assert(Math.abs((await page.locator('.camera-preview-image').boundingBox()).width - previewBox.width) < 2);
+  report.checks.push('Camera Globe uses a full-width map and wide camera frame by default; Expand view fills the screen, retains refresh/pause controls, and restores the normal layout on exit');
   assert.equal(await page.locator('.camera-list-select').count(), 60);
   assert(await page.getByLabel('Previous camera', { exact: true }).isDisabled());
   await page.getByLabel('Next camera', { exact: true }).click(); await loaded();
@@ -137,7 +151,11 @@ try {
   assert.notEqual(await selectedImage.getAttribute('data-source-url'), lastGood);
   report.checks.push('A rejected refresh retains the last successful frame and explicit retry recovers');
 
-  for (const width of [1440, 1024, 768, 390]) await noOverflow(width);
+  for (const width of [1440, 1024, 768, 390, 320]) {
+    await noOverflow(width);
+    const frame = await page.locator('.camera-preview-image').boundingBox();
+    assert(frame.width >= Math.min(600, width - 65), `Camera frame remains wide at ${width}px`);
+  }
   await page.screenshot({ path: 'artifacts/camera-browsing-mobile.png', fullPage: true, animations: 'disabled' });
   await page.setViewportSize({ width: 1440, height: 1000 });
   await page.screenshot({ path: 'artifacts/camera-browsing-desktop.png', fullPage: true, animations: 'disabled' });

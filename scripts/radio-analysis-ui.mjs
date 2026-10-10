@@ -4,6 +4,7 @@ import { chromium } from '@playwright/test';
 import { createApp } from '../server/index.mjs';
 import { openStore } from '../server/core.mjs';
 import { inspectRadioWav } from '../server/radio-analysis.mjs';
+import { checkRadioCameras, radioCameraFixtures } from './radio-camera-ui-checks.mjs';
 
 // Controlled transcripts and synthesized tones: no real radio traffic, user credentials, or API charges.
 function wav() {
@@ -21,11 +22,13 @@ const radioAnalysis = {
     if (failTranscription) throw Object.assign(new Error('Controlled AI outage: reconnect when available.'), { status: 502 });
     return { text, segments: [{ text, speaker: 'A', start: 0, end: metrics.duration }], metrics, skipped: false, source: body.source, startedAt: body.startedAt, model: 'Synthetic ASR fixture' };
   },
-  summarize: async body => ({ summary: 'This is a simulated assistance call for a synthetic test, not an actual emergency.', mentions: [{ kind: 'unit', text: 'Unit seven', quote: 'Unit seven', entryId: body.entries[0].id }], uncertainties: ['Synthetic fixture; no real incident.'], model: 'Synthetic analysis fixture', entryIds: body.entries.map(entry => entry.id), generatedAt: new Date().toISOString(), basis: 'Unverified machine transcript' })
+  summarize: async body => ({ summary: 'This is a simulated assistance call for a synthetic test, not an actual emergency.', mentions: [{ kind: 'unit', text: 'Unit seven', quote: 'Unit seven', entryId: body.entries[0].id }, { kind: 'location', text: 'Example Street', quote: 'respond to Example Street', entryId: body.entries[0].id }], uncertainties: ['Synthetic fixture; no real incident.'], model: 'Synthetic analysis fixture', entryIds: body.entries.map(entry => entry.id), generatedAt: new Date().toISOString(), basis: 'Unverified machine transcript' })
 };
 const { app } = createApp({ store, radioAnalysis }), server = app.listen(0, '127.0.0.1'); await new Promise(resolve => server.once('listening', resolve));
 const base = `http://127.0.0.1:${server.address().port}`, browser = await chromium.launch({ headless: true }), context = await browser.newContext({ viewport: { width: 1440, height: 1000 } }), page = await context.newPage();
 const report = { checks: [], errors: [] }; page.on('pageerror', error => report.errors.push(error.message));
+context.on('page', opened => { if (opened !== page) opened.on('pageerror', error => report.errors.push(error.message)); });
+const cameraFixtures = await radioCameraFixtures(context);
 await page.addInitScript(() => {
   window.captureMode = 'tone'; window.captureTracks = []; window.captureRequests = 0;
   Object.defineProperty(navigator.mediaDevices, 'getDisplayMedia', { configurable: true, value: async () => {
@@ -55,7 +58,8 @@ try {
   assert(await audio.evaluate(element => element.readyState >= 2 && !element.paused)); await audio.evaluate(element => element.pause());
   await panel.getByRole('button', { name: 'Analyze transcript', exact: true }).click();
   await panel.getByText('This is a simulated assistance call for a synthetic test, not an actual emergency.', { exact: true }).waitFor();
-  assert.equal(await panel.getByRole('button', { name: 'Show supporting clip', exact: true }).count(), 1);
+  assert.equal(await panel.getByRole('button', { name: 'Show supporting clip', exact: true }).count(), 2);
+  await checkRadioCameras(page, panel, cameraFixtures, report);
   assert.equal(store.evidence().length, 0, 'Analysis does not persist audio or evidence automatically');
   await panel.locator('.radio-transcript-entry').getByRole('button', { name: 'Save evidence', exact: true }).click();
   await panel.getByRole('button', { name: 'Saved', exact: true }).waitFor(); assert.equal(store.evidence().length, 1); assert(!JSON.stringify(store.evidence()).includes('blob:'));
@@ -69,10 +73,16 @@ try {
   await panel.getByRole('status').getByText('Capturing · waiting for audio', { exact: true }).waitFor();
   await page.waitForFunction(() => document.querySelectorAll('.radio-transcript-entry').length >= 2, null, { timeout: 20000 });
   assert(calls.some(call => call.source === 'Synthetic tab audio fixture' && call.metrics.duration >= 9.99 && call.metrics.duration <= 10.01), 'The real AudioWorklet path yields a complete 10-second WAV');
+  const cameraPopup = page.waitForEvent('popup'); await panel.locator('.radio-camera-match').first().click(); const liveCameraTab = await cameraPopup;
+  await liveCameraTab.getByLabel('Selected street camera', { exact: true }).waitFor();
+  assert(await page.evaluate(() => window.captureTracks.some(track => track.readyState === 'live')), 'Opening cameras keeps the radio capture running');
+  assert.equal(await panel.getByRole('button', { name: 'Stop capture', exact: true }).isDisabled(), false); await liveCameraTab.close();
   await panel.getByRole('button', { name: 'Stop capture', exact: true }).click();
   assert(await page.evaluate(() => window.captureTracks.every(track => track.readyState === 'ended')));
   report.checks.push('Live tab capture uses real WebAudio/AudioWorklet PCM chunks; Stop releases every track');
   await panel.getByRole('button', { name: 'Analyze transcript', exact: true }).click(); await panel.getByText(/AI interpretation · 2 clips/).waitFor();
+  assert.equal(await panel.locator('.radio-camera-match').count(), 0, 'A fresh AI analysis resets prior place matches');
+  await panel.getByRole('button', { name: 'Cameras nearby', exact: true }).click(); await panel.locator('.radio-camera-match').first().waitFor();
   for (const width of [1440, 1024, 768, 390, 320]) {
     await page.setViewportSize({ width, height: 1000 }); assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1), false, `Audio analysis fits ${width}px`);
     assert(await panel.getByRole('button', { name: 'Start tab capture', exact: true }).isVisible());
@@ -100,4 +110,4 @@ try {
   await panel.getByRole('button', { name: 'Clear session', exact: true }).click(); assert.equal(await panel.getByLabel('Replay captured audio clip', { exact: true }).count(), 0);
   assert.deepEqual(report.errors, []); report.checks.push('Leaving analysis cancels in-flight AI requests; outages stop processing, retry recovers, and clearing releases clips without page errors');
   writeFileSync('artifacts/radio-analysis-report.json', JSON.stringify(report, null, 2)); console.log(JSON.stringify(report, null, 2));
-} finally { await browser.close(); await new Promise(resolve => server.close(resolve)); store.db.close(); }
+} finally { cameraFixtures.release(); await browser.close(); await new Promise(resolve => server.close(resolve)); store.db.close(); }
