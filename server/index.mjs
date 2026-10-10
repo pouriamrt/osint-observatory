@@ -13,10 +13,11 @@ import { ottawaSnapshot } from './camera-images.mjs';
 import { createSatelliteProvider } from './satellite.mjs';
 import { findPlaces } from './places.mjs';
 import { createLiveViewsProvider } from './live-views.mjs';
+import { createRadioAnalysis } from './radio-analysis.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const escape = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-export function createApp({ store = openStore(process.env.DB_PATH || resolve(root, 'data/workbench.sqlite')), scopes = String(process.env.SCAN_ALLOWLIST || '127.0.0.1,::1,localhost').split(',').map(s => s.trim().toLowerCase()).filter(Boolean) } = {}) {
+export function createApp({ store = openStore(process.env.DB_PATH || resolve(root, 'data/workbench.sqlite')), scopes = String(process.env.SCAN_ALLOWLIST || '127.0.0.1,::1,localhost').split(',').map(s => s.trim().toLowerCase()).filter(Boolean), radioAnalysis = createRadioAnalysis() } = {}) {
   const app = express(); app.disable('x-powered-by'); app.set('trust proxy', false);
   const satelliteCatalogue = createSatelliteProvider();
   const liveViews = createLiveViewsProvider();
@@ -38,6 +39,22 @@ export function createApp({ store = openStore(process.env.DB_PATH || resolve(roo
     limited.set(key, [...recent, Date.now()]); next();
   });
   app.get('/api/health', (req, res) => res.json({ status: 'ready', retrievedAt: now() }));
+  app.get('/api/radio/analysis-status', (req, res) => res.json(radioAnalysis.status()));
+  let radioActive = 0;
+  const radioRequests = [];
+  for (const [path, method] of [['transcribe', 'transcribe'], ['summarize', 'summarize']]) {
+    app.post(`/api/radio/${path}`, async (req, res) => {
+      const time = Date.now(); while (radioRequests.length && radioRequests[0] < time - 60000) radioRequests.shift();
+      if (radioRequests.length >= 12 || radioActive >= 2) return res.status(429).json({ error: 'Audio analysis is busy. Wait for the current request before retrying.' });
+      radioRequests.push(time); radioActive++;
+      const controller = new AbortController();
+      const cancel = () => { if (!res.writableEnded) controller.abort(); };
+      res.on('close', cancel);
+      try { const result = await radioAnalysis[method](req.body, controller.signal); if (!controller.signal.aborted) res.json(result); }
+      catch (error) { if (!controller.signal.aborted) throw error; }
+      finally { radioActive--; res.off('close', cancel); }
+    });
+  }
   app.get('/api/satellite', async (req, res) => res.json(await satelliteCatalogue(req.query.refresh === '1')));
   app.get('/api/live-views', async (req, res) => res.json(await liveViews(req.query.refresh === '1')));
   app.get('/api/places', async (req, res) => res.json(await findPlaces(z.string().trim().min(2).max(200).parse(req.query.query))));

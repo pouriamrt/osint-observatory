@@ -18,6 +18,7 @@ A local research workspace for public cameras, geospatial events, public-source 
 - **Canadian coverage** — 2,708 bundled entries, including all 428 cameras in the Ottawa directory snapshot, plus Toronto, Calgary, Québec, and DriveBC.
 - **Snapshot updates** — automatic and manual refresh, pause/resume, retained frames during failures, and explicit provider outage states.
 - **Connected research tools** — geospatial events, public account lookups, transaction graphs, image metadata, spectrum plots, and registry searches.
+- **Live radio** - Ottawa OPP/EMS listening links, a searchable local frequency directory with online audio links, authorized tab-audio capture with OpenAI transcripts and summaries, direct audio/HLS playback, and imported spectrum analysis.
 - **Local evidence notebook** — save source details, retrieval times, and notes to SQLite; export your findings when ready.
 - **Responsive interface** — desktop, tablet, mobile, keyboard workspace search, and fullscreen maps.
 
@@ -56,7 +57,7 @@ Then open **http://127.0.0.1:8787**. The application binds to localhost and stor
 | Crypto Tracing | Inspect Bitcoin transactions, supported EVM results, and imported transfer graphs. |
 | NetScan | Run bounded DNS, certificate, and network checks within an authorized scope. |
 | Hawk | Inspect image metadata, file hashes, and landmark-bearing calculations. |
-| Skywave | Explore imported, calibrated spectrum samples and waterfalls. |
+| Skywave | Listen through Ottawa public-radio providers, browse local frequencies, transcribe authorized tab audio, analyze transcripts with AI, and inspect spectrum captures. |
 | Fisherman | Create consent-based research links with optional browser geolocation. |
 | Catalogue | Search LEI entities and browse curated registry sources. |
 | Evidence notebook | Save findings, annotate evidence, and export your workspace. |
@@ -72,6 +73,8 @@ npm run test:cameras:ui
 npm run test:satellite:ui
 npm run test:satellite:detail
 npm run test:live-views:ui
+npm run test:radio:ui
+npm run test:radio:analysis:ui
 ```
 
 `npm run check` builds the frontend and runs unit/integration tests. Camera browser checks use an isolated database and controlled network fixtures. GitHub Actions runs these checks on pushes and pull requests.

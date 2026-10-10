@@ -40,3 +40,7 @@ jobs:
         run: npm run test:satellite:detail
       - name: Check live cameras and satellite video
         run: npm run test:live-views:ui
+      - name: Check live radio and spectrum captures
+        run: npm run test:radio:ui
+      - name: Check radio capture and AI analysis
+        run: npm run test:radio:analysis:ui

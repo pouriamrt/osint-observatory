@@ -22,7 +22,7 @@ const sectors = [
   { id: 'crypto', title: 'Crypto Tracing', icon: GitBranch, detail: 'Wallet fund flows' },
   { id: 'netscan', title: 'NetScan', icon: Network, detail: 'Authorized network checks' },
   { id: 'hawk', title: 'Hawk', icon: Aperture, detail: 'Image provenance & geometry' },
-  { id: 'skywave', title: 'Skywave', icon: Radio, detail: 'Spectrum captures' },
+  { id: 'skywave', title: 'Skywave', icon: Radio, detail: 'Live radio and spectrum captures' },
   { id: 'fisherman', title: 'Fisherman', icon: Link2, detail: 'Consented research links' },
   { id: 'catalogue', title: 'Catalogue', icon: BookOpen, detail: 'Public registry sources' }
 ];
