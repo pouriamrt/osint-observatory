@@ -4,7 +4,7 @@ Use Node.js 24 or newer. Install dependencies with `npm ci`, then start the work
 
 ## Making a change
 
-Create a branch for a focused change. Include a brief explanation of the problem and resulting behavior in your pull request. Add tests when they verify a meaningful behavior or regression; keep UI changes consistent with the existing responsive layouts.
+Work directly on `main`; this repository uses a single branch. Keep changes focused, explain the resulting behavior in the commit, and complete the relevant checks before pushing. Add tests when they verify a meaningful behavior or regression; keep UI changes consistent with the existing responsive layouts.
 
 Run the build and unit/integration checks:
 

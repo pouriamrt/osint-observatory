@@ -16,6 +16,7 @@ A local research workspace for public cameras, geospatial events, public-source 
 - **Public camera explorer** — a globe and street map, searchable camera groups, persistent results, previous/next controls, and favorites.
 - **Satellite views** — detailed streets-and-buildings imagery with street names, province/state borders and city labels, place/address search and city shortcuts; recent NASA/NOAA weather layers; mapped live street cameras, nearby traffic snapshots, current NASA ISS streams, and a clearly labeled recorded SkySat video.
 - **Canadian coverage** — 2,708 bundled entries, including all 428 cameras in the Ottawa directory snapshot, plus Toronto, Calgary, Québec, and DriveBC.
+- **Iranian public views** — Tehran and Iran shortcuts, a dated Tehran city-view listing with an explicit offline status, and five official Mashhad HLS broadcasts. Iran 141 currently publishes no public camera locations.
 - **Snapshot updates** — automatic and manual refresh, pause/resume, retained frames during failures, and explicit provider outage states.
 - **Connected research tools** — geospatial events, public account lookups, transaction graphs, image metadata, spectrum plots, and registry searches.
 - **Live radio** - Ottawa OPP/EMS listening links, a searchable local frequency directory with online audio links, authorized tab-audio capture with OpenAI transcripts and summaries, direct audio/HLS playback, and imported spectrum analysis.

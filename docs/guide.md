@@ -67,6 +67,18 @@ With the app running, `npm run test:streets:ui` checks tile/pin alignment, curso
 
 With the app running, `node scripts/camera-city-ui.mjs` repeats the globe-zoom, on-map camera selection, real MTO outage, nearby switching, and actual municipal-image checks. `node scripts/ottawa-availability-probe.mjs` checks every published Ottawa image and writes a dated availability report under `artifacts/`; availability can change between checks.
 
+### Iran and Tehran public views
+
+The **Tehran** shortcut opens `#camera?country=Iran&place=Tehran`, clears conflicting filters, and focuses the city. **Iran** shows all bundled Iranian views. English and Persian Tehran searches are supported, and Add camera includes a country field for your own public sources.
+
+The bundled Iranian catalogue contains the [Tehran — Several Views public listing](https://www.webcamgalore.com/webcam/Iran/Tehran/37931.html) and five official [Haram Razavi live broadcasts](https://haram.razavi.ir/live) from Mashhad. The Tehran listing was marked **offline** at the recorded source check. It has no inline thumbnail, so an archived picture cannot be mistaken for a live Tehran frame. Its pin is the directory's approximate view location. This listing does not establish citywide camera coverage or the locations of its individual cameras.
+
+The [official Iran 141 camera service](https://141.ir/cameras) currently returns no public camera locations. Its source status and link remain visible with zero records; no Tehran traffic pins or image URLs are guessed. A future change in the public feed format requires verified camera metadata before it can be mapped. Third-party listings that resolve to a different country are excluded.
+
+Mashhad streams play through the existing HLS player and keep a link to the official broadcaster. Their programme thumbnails are labelled as previews, and their map pins share the approximate shrine-complex location from Wikipedia GeoData. Neither a loaded thumbnail nor a published stream URL establishes current stream availability. Source attribution, check times, and outage notes remain attached to saved findings.
+
+Iranian sources refresh independently after 24 hours or from the camera refresh control. A failed refresh retains the last source metadata and identifies it as cached. To rebuild the dated bundle, run `node scripts/build-iranian-catalog.mjs`; the file is replaced only when all three metadata sources succeed. `npm run test:iran:ui` checks Tehran shortcuts, country/source filters, reload, offline status, favorites, source links, HLS failure handling, and mobile layout with an isolated workspace and controlled network fixtures.
+
 ### Live radio in Skywave
 
 Skywave opens in **Live audio** mode with Ottawa, Ontario selected. Choose **EMS & OPP (Ottawa & Region)**, then **Listen on Broadcastify**. The official provider player opens in a new tab; sign in with a free Broadcastify account, then press Play there. Broadcastify reports current availability, controls any introductory advertising, and determines broadcast delay. This listing identifies provincial police and EMS in the region; it does not advertise Ottawa Police Service dispatch. Aviation and amateur-radio links are included separately.

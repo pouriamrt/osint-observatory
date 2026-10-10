@@ -2,13 +2,16 @@ import { readFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { now, fail, httpUrl } from './core.mjs';
 import { canadianSources, fetchCanadianCameras, quebecSnapshotMetadata } from './camera-feeds.mjs';
+import { iranianSources, fetchIranianCameras } from './iranian-cameras.mjs';
 const catalog = JSON.parse(readFileSync(new URL('./sources/camera-catalog.json', import.meta.url), 'utf8'));
 const canadianCatalog = JSON.parse(readFileSync(new URL('./sources/canadian-cameras.json', import.meta.url), 'utf8'));
+const iranianCatalog = JSON.parse(readFileSync(new URL('./sources/iranian-cameras.json', import.meta.url), 'utf8'));
 const quebecNumbers = new Map(canadianCatalog.sources.find(source => source.id === 'quebec511').cameras.map(camera => [camera.id, camera.cameraNumber]));
 const directoryURL = catalog.sources.earthcam;
 const trustedHosts = new Set(['www.earthcam.com', 'earthcam.com', 'myearthcam.com', 'www.skylinewebcams.com']);
 let pending;
 const canadianPending = new Map();
+const iranianPending = new Map();
 const clean = s => String(s || '').replace(/<[^>]+>/g, '').replace(/&amp;/g, '&').replace(/&quot;/g, '"').trim();
 function optionalUrl(value) { try { return httpUrl(value); } catch { return undefined; } }
 export function normalizeEarthCam(data, retrievedAt = now()) {
@@ -47,8 +50,25 @@ async function canadianDirectory(store, refresh) {
     return { cameras, source: { name: source.name, status, count: cameras.length, retrievedAt, url: source.url, license: source.license, licenseURL: source.licenseURL, attribution: source.attribution, error } };
   }));
 }
+async function iranianDirectory(store, refresh) {
+  return Promise.all(iranianSources.map(async source => {
+    const snapshot = iranianCatalog.sources.find(saved => saved.id === source.id), cacheName = `camera-${source.id}`;
+    const cache = store.db.prepare('SELECT * FROM feed_cache WHERE name=?').get(cacheName);
+    let data = cache ? JSON.parse(cache.payload) : snapshot;
+    let retrievedAt = cache?.fetched || snapshot.retrievedAt, status = data.status === 'unavailable' || data.status === 'provider' ? data.status : cache ? 'ready' : 'snapshot', error;
+    if (refresh || Date.now() - Date.parse(retrievedAt) > 86400000) {
+      try {
+        if (!iranianPending.has(source.id)) iranianPending.set(source.id, fetchIranianCameras(source.id).finally(() => iranianPending.delete(source.id)));
+        data = await iranianPending.get(source.id); retrievedAt = data.retrievedAt; status = data.status;
+        store.db.prepare('INSERT OR REPLACE INTO feed_cache VALUES (?,?,?)').run(cacheName, JSON.stringify(data), retrievedAt);
+      } catch (e) { status = data.cameras.length ? 'cached' : 'unavailable'; error = e.message; }
+    }
+    return { cameras: data.cameras, source: { ...source, status, count: data.cameras.length, retrievedAt, note: data.note, error } };
+  }));
+}
 export async function cameraDirectory(store, refresh = false) {
   const canadianRequest = canadianDirectory(store, refresh);
+  const iranianRequest = iranianDirectory(store, refresh);
   let cache = store.db.prepare('SELECT * FROM feed_cache WHERE name=?').get('camera-earthcam');
   let earthcam = cache ? JSON.parse(cache.payload) : catalog.earthcam;
   let status = cache ? 'ready' : 'snapshot', retrievedAt = cache?.fetched || catalog.retrievedAt, error;
@@ -61,17 +81,22 @@ export async function cameraDirectory(store, refresh = false) {
   }
   const imported = store.list('camera').map(c => ({ ...c, provider: 'My cameras', coordinateType: c.coordinateType || 'user', retrievedAt: c.importedAt }));
   const canadian = await canadianRequest;
-  const cameras = [...imported, ...catalog.skyline, ...earthcam, ...canadian.flatMap(result => result.cameras)];
+  const iranian = await iranianRequest;
+  const cameras = [...imported, ...catalog.skyline, ...earthcam, ...canadian.flatMap(result => result.cameras), ...iranian.flatMap(result => result.cameras)];
   const byURL = new Map(); for (const c of cameras) if (!byURL.has(c.url)) byURL.set(c.url, c);
   const unique = [...byURL.values()];
-  return { cameras: unique, sources: [{ name: 'EarthCam', status, count: earthcam.length, retrievedAt, url: 'https://www.earthcam.com/mapsearch/', error }, { name: 'SkylineWebcams', status: 'snapshot', count: catalog.skyline.length, retrievedAt: catalog.retrievedAt, url: catalog.sources.skyline, note: 'Featured public views; coordinates identify the depicted place and are approximate.' }, ...canadian.map(result => result.source), { name: 'My cameras', status: 'local', count: imported.length }], retrievedAt: now() };
+  return { cameras: unique, sources: [{ name: 'EarthCam', status, count: earthcam.length, retrievedAt, url: 'https://www.earthcam.com/mapsearch/', error }, { name: 'SkylineWebcams', status: 'snapshot', count: catalog.skyline.length, retrievedAt: catalog.retrievedAt, url: catalog.sources.skyline, note: 'Featured public views; coordinates identify the depicted place and are approximate.' }, ...canadian.map(result => result.source), ...iranian.map(result => result.source), { name: 'My cameras', status: 'local', count: imported.length }], retrievedAt: now() };
 }
 export async function resolveCameraPage(store, url) {
   const normalized = httpUrl(url); const u = new URL(normalized);
-  if (!trustedHosts.has(u.hostname) || u.protocol !== 'https:' || u.port) fail('Use an HTTPS EarthCam or SkylineWebcams camera page.');
+  // Iranian sources can be filled from the verified catalogue only. This does
+  // not allow arbitrary server-side requests to additional domains.
+  const iranianKnown = iranianCatalog.sources.some(source => source.cameras.some(camera => camera.url === normalized || camera.viewingPage === normalized));
+  if ((!trustedHosts.has(u.hostname) && !iranianKnown) || u.protocol !== 'https:' || u.port) fail('Use an HTTPS EarthCam or SkylineWebcams page, or a listed Iranian camera URL.');
   const directory = await cameraDirectory(store);
-  const known = directory.cameras.find(c => c.url === normalized);
+  const known = directory.cameras.find(c => c.url === normalized || (iranianKnown && c.viewingPage === normalized));
   if (known) return { ...known, known: true };
+  if (iranianKnown) fail('This camera is no longer in the current public directory.', 404);
   const html = await readProvider(normalized);
   const meta = name => { const tags = [...html.matchAll(/<meta\b[^>]*>/gi)].map(m => m[0]); const tag = tags.find(t => new RegExp(`(?:property|name)=["']${name.replace('.', '\\.')}["']`, 'i').test(t)); return clean(tag?.match(/content=["']([^"']+)["']/i)?.[1]); };
   const thumbnail = optionalUrl(meta('og:image'));

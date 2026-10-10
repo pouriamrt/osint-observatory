@@ -32,7 +32,8 @@ export default function CameraSnapshot({ item, refreshVersion = 0, onTryAnother,
     refresh();
   }, [refreshVersion]);
   const loading = state.status === 'loading';
-  const offline = state.status === 'offline';
+  const listedOffline = item.availability === 'offline' && !imageUrl;
+  const offline = state.status === 'offline' || listedOffline;
   const failed = state.status === 'error' || offline;
   useEffect(() => { onStatusChange?.(item.id, state.status); }, [item.id, state.status, onStatusChange]);
   useEffect(() => {
@@ -54,11 +55,11 @@ export default function CameraSnapshot({ item, refreshVersion = 0, onTryAnother,
     </div>
     {expandError && <p className="camera-expand-error" role="alert">{expandError}</p>}
     {(snapshot || failed || state.status === 'unavailable') && <div className="camera-snapshot-controls">
-      {offline && <div className="camera-offline-notice"><strong>Camera currently offline</strong>{onTryAnother && <button className="button small" onClick={onTryAnother}>Try a nearby camera</button>}</div>}
+      {offline && <div className="camera-offline-notice"><strong>{listedOffline ? 'Offline at last source check' : 'Camera currently offline'}</strong>{onTryAnother && <button className="button small" onClick={onTryAnother}>Try a nearby camera</button>}</div>}
       {item.thumbnail && <div className="snapshot-actions"><button className="button small" disabled={loading} onClick={refresh}><RefreshCw size={14} className={loading ? 'spin' : ''} />{loading ? 'Loading snapshot…' : failed ? 'Retry snapshot' : 'Refresh snapshot'}</button>{snapshot && <button className="button small" aria-pressed={automatic} onClick={() => setAutomatic(value => !value)}>{automatic ? <Pause size={14} /> : <Play size={14} />}{automatic ? 'Pause updates' : 'Resume updates'}</button>}</div>}
       {snapshot && <p className="snapshot-update-mode">{automatic ? visible ? `Auto-refresh every ${intervalSeconds} seconds` : 'Updates paused while this tab is hidden' : 'Automatic updates paused'}{ottawa && ' · Ottawa frames may stay the same for 5–15 seconds.'}</p>}
       <p className={`snapshot-status ${failed ? 'snapshot-error' : ''}`} role="status">
-        {offline ? `Ottawa reports no live feed for this camera.${state.hasImage ? ' Showing the last available frame.' : ''} Retry or choose another camera.` : failed ? state.hasImage ? 'Refresh failed. Showing the last loaded image; retry or open the camera page.' : 'The provider image could not be loaded here. Open the camera page or retry.' : state.status === 'unavailable' ? 'This source provides a camera page without an inline image.' : loading ? 'Requesting the latest available provider image…' : state.loadedAt ? `Image fetched at ${new Date(state.loadedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}. This is the fetch time, not the capture time.` : ''}
+        {listedOffline ? `${item.source} marked this listing offline on ${new Date(item.availabilityCheckedAt).toLocaleString()}. Open the camera page for the latest availability.` : offline ? `Ottawa reports no live feed for this camera.${state.hasImage ? ' Showing the last available frame.' : ''} Retry or choose another camera.` : failed ? state.hasImage ? 'Refresh failed. Showing the last loaded image; retry or open the camera page.' : 'The provider image could not be loaded here. Open the camera page or retry.' : state.status === 'unavailable' ? 'This source provides a camera page without an inline image.' : loading ? 'Requesting the latest available provider image…' : state.loadedAt ? `${item.mediaType === 'stream' ? 'Programme preview' : 'Image'} fetched at ${new Date(state.loadedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}. This is the fetch time, not the capture time.` : ''}
       </p>
     </div>}
   </div>;

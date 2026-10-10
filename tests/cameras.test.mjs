@@ -4,9 +4,11 @@ import { readFileSync } from 'node:fs';
 import { openStore, now } from '../server/core.mjs';
 import { canadianSources, normalizeCanadianCameras, parseCameraFeed, quebecSnapshotMetadata } from '../server/camera-feeds.mjs';
 import { normalizeEarthCam, cameraDirectory, resolveCameraPage } from '../server/cameras.mjs';
+import { iranianSources } from '../server/iranian-cameras.mjs';
 const snapshot = JSON.parse(readFileSync(new URL('../server/sources/camera-catalog.json', import.meta.url), 'utf8'));
 const canadian = JSON.parse(readFileSync(new URL('../server/sources/canadian-cameras.json', import.meta.url), 'utf8'));
-function seed(store) { store.db.prepare('INSERT INTO feed_cache VALUES (?,?,?)').run('camera-earthcam', JSON.stringify(snapshot.earthcam), now()); for (const source of canadian.sources) store.db.prepare('INSERT INTO feed_cache VALUES (?,?,?)').run(`camera-${source.id}`, JSON.stringify(source.cameras), now()); }
+const iranian = JSON.parse(readFileSync(new URL('../server/sources/iranian-cameras.json', import.meta.url), 'utf8'));
+function seed(store) { store.db.prepare('INSERT INTO feed_cache VALUES (?,?,?)').run('camera-earthcam', JSON.stringify(snapshot.earthcam), now()); for (const source of canadian.sources) store.db.prepare('INSERT INTO feed_cache VALUES (?,?,?)').run(`camera-${source.id}`, JSON.stringify(source.cameras), now()); for (const source of iranian.sources) store.db.prepare('INSERT INTO feed_cache VALUES (?,?,?)').run(`camera-${source.id}`, JSON.stringify(source), now()); }
 test('EarthCam normalization keeps provider positions and rejects missing, invalid, or unsafe records', () => {
   const camera = { id: 'fixture', name: 'Fixture &amp; camera', posn: ['43.6', '-79.4'], url: 'https://www.earthcam.com/fixture/', thumbnail: 'https://www.earthcam.com/fixture.jpg', country: 'Canada' };
   const invalid = [null, false, '', '  ', 91, 'not-a-number'];
@@ -34,7 +36,8 @@ test('camera lookup rejects arbitrary hosts and ports and a failed refresh retai
   try {
     for (const url of ['http://www.earthcam.com/', 'https://127.0.0.1/', 'https://www.earthcam.com.evil.test/', 'https://www.earthcam.com:8787/', 'https://user:secret@www.earthcam.com/']) await assert.rejects(resolveCameraPage(store, url));
     assert.equal(requests, 0);
-    const data = await cameraDirectory(store, true); assert.equal(requests, 1 + canadianSources.length); assert.equal(data.sources[0].status, 'cached'); assert.equal(data.sources[0].count, snapshot.earthcam.length); assert(data.cameras.length > 2000); for (const source of canadian.sources) { const status = data.sources.find(s => s.name === source.name); assert.equal(status.status, 'cached'); assert.equal(status.count, source.cameras.length); }
+    const data = await cameraDirectory(store, true); assert.equal(requests, 1 + canadianSources.length + iranianSources.length); assert.equal(data.sources[0].status, 'cached'); assert.equal(data.sources[0].count, snapshot.earthcam.length); assert(data.cameras.length > 2000); for (const source of canadian.sources) { const status = data.sources.find(s => s.name === source.name); assert.equal(status.status, 'cached'); assert.equal(status.count, source.cameras.length); }
+    assert.equal(data.cameras.filter(c => c.country === 'Iran').length, 6); assert.equal(data.sources.find(s => s.name === 'Iran 141').status, 'unavailable');
   } finally { globalThis.fetch = original; store.db.close(); }
 });
 
@@ -55,6 +58,24 @@ test('Toronto JSONP is parsed as data and never evaluated', () => {
   assert.deepEqual(parseCameraFeed('toronto', 'jsonTMCEarthCamerasCallback({"Data":[]});'), { Data: [] });
   assert.throws(() => parseCameraFeed('toronto', 'evilCallback({"Data":[]});'));
   assert.throws(() => parseCameraFeed('toronto', 'jsonTMCEarthCamerasCallback({"Data":[]});process.exit()'));
+});
+
+test('Iranian coverage keeps Tehran availability separate from playable Mashhad streams and supports known-page lookup', async () => {
+  const store = openStore(':memory:'); seed(store); const original = globalThis.fetch;
+  globalThis.fetch = async () => { throw new Error('This check must use verified cached metadata only'); };
+  try {
+    const data = await cameraDirectory(store), iran = data.cameras.filter(camera => camera.country === 'Iran');
+    assert.equal(iran.length, 6);
+    const tehran = iran.filter(camera => camera.location === 'Tehran, Iran'); assert.equal(tehran.length, 1);
+    assert.equal(tehran[0].availability, 'offline'); assert.equal(tehran[0].thumbnail, undefined); assert.equal(tehran[0].kind, 'page'); assert.equal(tehran[0].coordinateType, 'view');
+    assert.equal(iran.filter(camera => camera.kind === 'hls' && camera.location.startsWith('Mashhad')).length, 5);
+    assert.equal(data.sources.find(source => source.name === 'Iran 141').count, 0);
+    assert.equal((await resolveCameraPage(store, tehran[0].url)).known, true);
+    const live = await resolveCameraPage(store, 'https://haram.razavi.ir/live'); assert.equal(live.kind, 'hls'); assert.equal(live.country, 'Iran');
+    for (const url of ['https://haram.razavi.ir/admin', 'https://www.webcamgalore.com/unknown', 'https://newlive.nasimrezvan.com/hls/unknown/index.m3u8', `${tehran[0].url}?target=127.0.0.1`]) await assert.rejects(resolveCameraPage(store, url));
+    store.importRows('camera', [{ name: 'My Tehran view', country: 'Iran', lat: 35.7, lon: 51.4, url: tehran[0].url, source: 'User location' }]);
+    const updated = await cameraDirectory(store); assert.equal(updated.cameras.filter(camera => camera.url === tehran[0].url).length, 1); assert.equal(updated.cameras.find(camera => camera.url === tehran[0].url).name, 'My Tehran view');
+  } finally { globalThis.fetch = original; store.db.close(); }
 });
 test('Ottawa maps feature IDs to the correct image camera numbers and retains operator attribution', () => {
   const city = { id: 33, camera_number: 49, cameraOwner: 'CITY', name: 'Booth & Wellington', name_french: 'Booth et Wellington', latitude: 45.416354, longitude: -75.714726 };

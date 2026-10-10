@@ -12,6 +12,7 @@
     "check": "npm run build && npm test",
     "test:ui": "node scripts/ui-smoke.mjs",
     "test:cameras:ui": "node scripts/camera-browsing-ui.mjs",
+    "test:iran:ui": "node scripts/iran-ui.mjs",
     "test:streets:ui": "node scripts/street-map-ui.mjs",
     "test:map-markers:ui": "node scripts/map-marker-ui.mjs",
     "test:satellite:ui": "node scripts/satellite-ui.mjs",
